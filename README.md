@@ -61,13 +61,13 @@ npm start                   # http://localhost:4000 에서 API와 빌드된 화�
 |---|---|---|
 | Build | `npm ci --include=dev && npm run build` | 빌드 도구가 devDependencies 에 있어 함께 설치 |
 | Start | `npm run db:seed && npm start` | 미적용 마이그레이션 적용 → DB가 비었을 때만 샘플 생성 → 서버 시작 |
-| 영구 디스크 | `/var/data` (1GB), `DB_PATH=/var/data/hr.db` | SQLite 파일 보관. **유료(starter 이상) 인스턴스에서만 사용 가능** |
+| 플랜 | **free (현재)** | 시연용. 영구 디스크 없음 → 재시작 시 DB 초기화. 운영 시 `plan: starter` + `disk`(`/var/data`) + `DB_PATH=/var/data/hr.db` 주석 해제 |
 | `NODE_VERSION` | 24.19.0 | Node 24 내장 SQLite 사용 |
 | `COOKIE_SECURE` | true | HTTPS 전용 쿠키 |
 | `TRUST_PROXY` | 1 | Render 프록시 뒤의 실제 접속 IP 로 로그인 시도 제한·접근 로그 기록 |
 | Health check | `/api/health` | |
 
-- **무료 플랜:** 영구 디스크를 쓸 수 없어 재배포·재시작(15분 미사용 후 절전 포함)마다 DB가 샘플 데이터로 초기화됩니다. 시연용으로만 쓰세요.
+- **무료 플랜(현재 설정):** 영구 디스크를 쓸 수 없고 15분 미사용 시 절전 후 다시 시작하므로, 재배포·재시작마다 DB가 샘플 데이터로 초기화됩니다. 시연용으로만 쓰세요. 데이터를 유지하려면 `render.yaml` 의 안내대로 유료(starter) + 디스크로 바꾸세요.
 - **기존 로컬 데이터 옮기기:** 배포 후 Render Shell 에서 `/var/data/hr.db` 를 로컬 `data/hr.db` 로 교체할 수 있습니다(서비스 중지 후). 그렇지 않으면 샘플 데이터로 시작합니다.
 
 ## 로그인 방식 / 샘플 계정

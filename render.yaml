@@ -1,14 +1,16 @@
 # Render Blueprint — 대양롤랜트 인사평가 시스템
 # Render 대시보드 → New → Blueprint → 이 저장소 선택 시 아래 설정으로 웹 서비스가 생성됩니다.
 #
-# SQLite DB 파일을 영구 디스크(/var/data)에 저장합니다.
-# 영구 디스크는 유료 인스턴스(starter 이상)에서만 사용할 수 있습니다.
-# 무료(free) 플랜으로 바꾸면 디스크 없이 동작하며, 재배포·재시작 때마다 DB가 샘플 데이터로 초기화됩니다.
+# 현재: 무료(free) 플랜 — 시연·확인용
+#   무료 인스턴스는 영구 디스크가 없고 15분간 접속이 없으면 절전 후 다시 시작합니다.
+#   다시 시작할 때마다 DB(SQLite)가 샘플 데이터로 초기화되므로 입력한 데이터는 유지되지 않습니다.
+#
+# 데이터를 유지하려면(운영용): plan 을 starter 로 바꾸고 아래 disk 블록과 DB_PATH 주석을 해제하세요.
 services:
   - type: web
     name: rollent-hr
     runtime: node
-    plan: starter
+    plan: free
     region: singapore
     # 빌드 도구(vite, tsx 등)가 devDependencies 에 있으므로 함께 설치
     buildCommand: npm ci --include=dev && npm run build
@@ -16,15 +18,17 @@ services:
     startCommand: npm run db:seed && npm start
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:
-      name: hr-data
-      mountPath: /var/data
-      sizeGB: 1
+    # 운영용(유료 starter 이상)에서만 사용 가능
+    # disk:
+    #   name: hr-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: 24.19.0
-      - key: DB_PATH
-        value: /var/data/hr.db
+      # 운영용: 영구 디스크에 DB 저장
+      # - key: DB_PATH
+      #   value: /var/data/hr.db
       # HTTPS 전용 쿠키
       - key: COOKIE_SECURE
         value: "true"
