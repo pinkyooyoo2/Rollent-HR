@@ -1,0 +1,54 @@
+{
+  "name": "rollent-hr-evaluation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "대양롤랜트 인사평가 관리 시스템",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch --clear-screen=false server/src/index.ts",
+    "dev:client": "vite",
+    "build": "tsc -p client/tsconfig.json --noEmit && vite build",
+    "start": "cross-env NODE_ENV=production tsx server/src/index.ts",
+    "typecheck": "tsc -p client/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
+    "db:migrate": "tsx server/src/db/migrate.ts",
+    "db:seed": "tsx server/src/db/seed.ts",
+    "db:reset": "tsx server/src/db/seed.ts --reset",
+    "db:demo-accounts": "tsx server/src/db/applyDemoAccounts.ts",
+    "test:api": "tsx server/test/smoke.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "helmet": "^8.3.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^3.0.1",
+    "lucide-react": "^0.511.0",
+    "papaparse": "^5.5.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "recharts": "^2.15.3",
+    "zod": "^3.24.2"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.8",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^4.17.22",
+    "@types/node": "^24.19.2",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "tailwindcss": "^4.1.8",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}
