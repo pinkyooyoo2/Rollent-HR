@@ -934,6 +934,9 @@ const zh: Record<string, string> = {
   'evalSite.allDoneDesc': '辛苦了。评价分数和结果不予公开，如需修改请联系人事负责人。',
   'evalSite.noAssignments': '目前没有需要填写的评价',
   'evalSite.noAssignmentsDesc': '评价开始后将显示在此处。',
+  'evalSite.waitingFor.self': '评价对象完成自我评价后即可进行评价。',
+  'evalSite.waitingNote': '评价对象提交后将自动开放。与您本人是否提交自我评价无关。',
+  'evalSite.waitShort.self': '等待自我评价',
 };
 
 export default zh;

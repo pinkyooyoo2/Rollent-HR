@@ -934,6 +934,9 @@ const ko: Record<string, string> = {
   'evalSite.allDoneDesc': '수고하셨습니다. 평가 점수와 결과는 공개되지 않으며, 수정이 필요하면 인사담당자에게 문의하세요.',
   'evalSite.noAssignments': '현재 작성할 평가가 없습니다',
   'evalSite.noAssignmentsDesc': '평가가 시작되면 이곳에 표시됩니다.',
+  'evalSite.waitingFor.self': '평가 대상자의 자기평가가 완료된 후 평가를 진행할 수 있습니다.',
+  'evalSite.waitingNote': '평가 대상자가 자기평가를 제출하면 자동으로 작성할 수 있게 됩니다. 본인의 자기평가 제출 여부와는 관계없습니다.',
+  'evalSite.waitShort.self': '대상자 자기평가 대기',
 };
 
 export default ko;

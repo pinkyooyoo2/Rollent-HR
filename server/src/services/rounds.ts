@@ -53,6 +53,8 @@ export function autoAssign(roundId: number, overwrite = false) {
       // 팀원→팀장평가: 실시하는 차수이면 팀장 대상자마다 소속 팀원 각자에게 배정 (가중치는 최종 점수 반영 여부만 결정)
       if (round?.upward_enabled && isLeaderGroup(t.job_group)) {
         for (const ev of upwardEvaluators(t.id)) {
+          // 관리자가 이미 다른 팀장의 평가자로 지정한 팀원은 부서 팀장에게 중복 배정하지 않음
+          if (get(`SELECT 1 FROM evaluation_assignments WHERE round_id = ? AND stage = 'upward' AND evaluator_employee_id = ? AND target_employee_id <> ?`, [roundId, ev, t.id])) continue;
           created += run(`INSERT OR IGNORE INTO evaluation_assignments (round_id, target_employee_id, stage, evaluator_employee_id) VALUES (?, ?, 'upward', ?)`,
             [roundId, t.id, ev]).changes;
         }
@@ -120,17 +122,22 @@ export function stageIsOpen(row: { round_status: string } & Record<string, any>,
 }
 
 /** 순차 진행 정책: 이전 단계(필수)가 제출되어야 다음 단계 작성 가능 */
+/**
+ * 평가 활성화 조건 (평가 대상자 중심): 자기평가가 아닌 모든 평가는 "평가 대상자의 자기평가"가 최종 제출되어야 작성할 수 있다.
+ *  - 자기평가(팀원·팀장·임원): 다른 평가와 무관하게 언제든 작성
+ *  - 팀장 → 팀원, 임원 → 팀원: 그 팀원의 자기평가 제출 후 (팀장평가·임원평가는 서로 독립)
+ *  - 팀원 → 팀장, 임원 → 팀장: 그 팀장의 자기평가 제출 후 (팀원→팀장평가·임원평가는 서로 독립)
+ *  - 평가자 본인의 자기평가 제출 여부는 확인하지 않는다
+ * 기다리는 단계가 있으면 'self' 를 반환 (조건 충족 시 null)
+ */
+export function pendingPreviousStage(roundId: number, targetId: number, stage: Stage): Stage | null {
+  if (stage === 'self') return null;
+  const self = get<{ status: string }>(`SELECT status FROM evaluation_assignments WHERE round_id = ? AND target_employee_id = ? AND stage = 'self'`, [roundId, targetId]);
+  // 자기평가 단계가 없는 대상자(자기평가 가중치 0 등)는 선행 조건 없음
+  if (!self) return null;
+  return self.status === 'submitted' ? null : 'self';
+}
+
 export function previousStagesDone(roundId: number, targetId: number, stage: Stage): boolean {
-  const idx = STAGES.indexOf(stage);
-  if (idx === 0 || stage === 'upward') return true;
-  const weights = getRoundWeights(roundId);
-  const t = get<any>('SELECT job_group FROM round_targets WHERE round_id = ? AND employee_id = ?', [roundId, targetId]);
-  const w = weights[t?.job_group] ?? weights.default;
-  for (const prev of STAGES.slice(0, idx)) {
-    // 팀원→팀장평가는 다른 단계와 독립적으로 진행 (선행 조건 아님)
-    if (prev === 'upward' || w[prev] <= 0) continue;
-    const a = get<any>('SELECT status FROM evaluation_assignments WHERE round_id = ? AND target_employee_id = ? AND stage = ?', [roundId, targetId, prev]);
-    if (!a || a.status !== 'submitted') return false;
-  }
-  return true;
+  return pendingPreviousStage(roundId, targetId, stage) === null;
 }

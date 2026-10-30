@@ -188,8 +188,8 @@ check('단계 마감', (await admin.req('POST', `/rounds/${newRound.data.id}/sta
 check('차수 삭제(응답 없음)', (await admin.req('DELETE', `/rounds/${newRound.data.id}`)).status === 200);
 
 console.log('\n[7] 평가 작성 (직원 본인)');
-// 관리자는 모든 응답·점수를 볼 수 있으므로 일반 직원 중에서 선택
-const pending = prog.data.items.find((x: any) => x.emp_no !== 'Admin' && (x.stages.self.state === 'not_started' || x.stages.self.state === 'in_progress'));
+// 관리자는 모든 응답·점수를 볼 수 있으므로 일반 직원 중에서 선택 (역할별 확인용 계정은 [14] 단계 순서 검증에 사용)
+const pending = prog.data.items.find((x: any) => !['Admin', 'A000', 'A0001', 'A0002'].includes(x.emp_no) && (x.stages.self.state === 'not_started' || x.stages.self.state === 'in_progress'));
 const writer = new Client();
 check(`미제출 직원 로그인 (${pending.emp_no})`, (await writer.ready(pending.name, pending.emp_no)).status === 200);
 const mine = await writer.req('GET', '/my/assignments');
@@ -434,6 +434,85 @@ check('팀원→팀장평가 평가자 제외·추가', !notStarted || ((await a
   && (await admin.req('POST', `/rounds/${r2.id}/assignments`, { targetEmployeeId: leaderRow.employee_id, stage: 'upward', evaluatorEmployeeId: notStarted.evaluator_employee_id })).data.added === 1));
 check('임원에게 평가자 배정 불가', (await admin.req('POST', `/rounds/${r2.id}/assignments`,
   { targetEmployeeId: execRow.employee_id, stage: 'exec', evaluatorEmployeeId: leaderRow.employee_id })).data.error === 'EXECUTIVE_SELF_ONLY');
+
+console.log('\n[14] 평가 활성화 조건: 평가 대상자의 자기평가 제출 기준 (평가자 본인 자기평가와 무관)');
+// 역할별 확인용 계정(팀원 A000 / 팀장 A0001 / 임원 A0002)은 처음에 세 사람 모두 자기평가 미제출
+const sMember = new Client();
+await sMember.login('팀원', 'A000');
+const sLeader = new Client();
+await sLeader.login('팀장', 'A0001');
+const sExec = new Client();
+await sExec.login('임원', 'A0002');
+const itemsOf = async (c: Client) => (await c.req('GET', '/eval/home')).data.items as any[];
+const itemOf = async (c: Client, type: string) => (await itemsOf(c)).find((i: any) => i.eval_type === type);
+check('확인용 팀원의 팀장평가 대상은 확인용 팀장 한 명 (자동 배정을 다시 해도 부서 팀장 중복 배정 없음)',
+  (await itemsOf(sMember)).filter((i: any) => i.eval_type === 'member_to_leader').map((i: any) => i.target.name).join() === '팀장');
+const submitItem = async (c: Client, id: number) => {
+  const fm = await c.req('GET', `/eval/assignments/${id}`);
+  return c.req('POST', `/eval/assignments/${id}/submit`, { answers: fillAll(fm.data.form), seq: Date.now() });
+};
+const draftCode = async (c: Client, id: number) => (await c.req('PUT', `/eval/assignments/${id}/draft`, { answers: {}, seq: Date.now() })).data.error ?? 'OK';
+
+// 자기평가는 다른 평가와 무관하게 언제든 작성 가능
+check('①②③ 자기평가는 다른 평가 완료 여부와 무관하게 작성 가능 (팀원·팀장·임원)',
+  (await itemOf(sMember, 'self')).editable && (await itemOf(sLeader, 'self')).editable && (await itemOf(sExec, 'self')).editable);
+
+// 테스트 2: 팀장 자기평가 미완료 + 팀원 자기평가 미완료 → 팀장은 팀원 평가 불가
+let l2m = await itemOf(sLeader, 'leader_to_member');
+check('테스트 2: 팀장 자기평가 미완료 + 팀원 자기평가 미완료 → 팀장은 팀원 평가 불가 (서버도 저장 거부)',
+  l2m.state === 'waiting' && l2m.waiting_for === 'self' && (await draftCode(sLeader, l2m.id)) === 'PREVIOUS_STAGE_PENDING', l2m);
+// ⑥ 팀원 → 팀장: 팀장 자기평가 전에는 불가
+let m2l = await itemOf(sMember, 'member_to_leader');
+check('⑥ 팀장 자기평가 미완료 → 팀원의 팀장평가 불가', m2l.state === 'waiting' && (await draftCode(sMember, m2l.id)) === 'PREVIOUS_STAGE_PENDING', m2l);
+
+check('팀원 자기평가 제출', (await submitItem(sMember, (await itemOf(sMember, 'self')).id)).status === 200);
+
+// 테스트 1: 팀장 자기평가 미완료 + 팀원 자기평가 완료 → 가능
+l2m = await itemOf(sLeader, 'leader_to_member');
+check('테스트 1: 팀장 자기평가 미완료 + 팀원 자기평가 완료 → 팀장은 팀원 평가 가능',
+  (await itemOf(sLeader, 'self')).state !== 'submitted' && l2m.editable && (await draftCode(sLeader, l2m.id)) === 'OK', l2m);
+// 테스트 3 + 5: 임원 자기평가 미완료, 팀장평가 미완료 → 임원은 팀원 평가 가능
+const e2m = await itemOf(sExec, 'exec_to_member');
+check('테스트 3: 임원 자기평가 미완료 + 팀원 자기평가 완료 → 임원은 팀원 평가 가능',
+  (await itemOf(sExec, 'self')).state !== 'submitted' && e2m.editable && (await draftCode(sExec, e2m.id)) === 'OK', e2m);
+check('테스트 5: 팀원 자기평가 완료 + 팀장평가 미완료 → 임원은 팀원 평가 가능',
+  (await itemOf(sLeader, 'leader_to_member')).state !== 'submitted' && e2m.editable, e2m);
+// 팀원 본인 자기평가는 팀원→팀장 활성화와 무관 (여전히 팀장 자기평가 대기)
+m2l = await itemOf(sMember, 'member_to_leader');
+check('⑥ 팀원 본인 자기평가를 해도 팀장 자기평가 전이면 팀원→팀장평가 불가', m2l.state === 'waiting', m2l);
+
+check('팀장 자기평가 제출', (await submitItem(sLeader, (await itemOf(sLeader, 'self')).id)).status === 200);
+
+// 테스트 4 + 6: 임원 자기평가 미완료, 팀원→팀장평가 미완료 → 임원은 팀장 평가 가능
+const e2l = await itemOf(sExec, 'exec_to_leader');
+check('테스트 4: 임원 자기평가 미완료 + 팀장 자기평가 완료 → 임원은 팀장 평가 가능',
+  (await itemOf(sExec, 'self')).state !== 'submitted' && e2l.editable && (await draftCode(sExec, e2l.id)) === 'OK', e2l);
+check('테스트 6: 팀장 자기평가 완료 + 팀원→팀장평가 미완료 → 임원은 팀장 평가 가능',
+  (await itemOf(sMember, 'member_to_leader')).state !== 'submitted' && e2l.editable, e2l);
+check('⑥ 팀장 자기평가 완료 → 팀원의 팀장평가 가능 (임원평가와 독립)', (await itemOf(sMember, 'member_to_leader')).editable);
+
+// 테스트 7: 팀장 자기평가 완료 + 팀원 자기평가 미완료 → 불가 (부서 팀장 최수진과 자기평가 미제출 팀원으로 확인)
+const realLeader = new Client();
+await realLeader.login('최수진', 'R1001');
+const rlSelf = await itemOf(realLeader, 'self');
+if (rlSelf.state !== 'submitted') await submitItem(realLeader, rlSelf.id);
+const rlWaiting = (await itemsOf(realLeader)).filter((i: any) => i.eval_type === 'leader_to_member' && i.state === 'waiting');
+check('테스트 7: 팀장 자기평가 완료 + 팀원 자기평가 미완료 → 팀장은 그 팀원 평가 불가',
+  (await itemOf(realLeader, 'self')).state === 'submitted' && rlWaiting.length > 0 && rlWaiting.every((i: any) => i.waiting_for === 'self')
+  && (await draftCode(realLeader, rlWaiting[0].id)) === 'PREVIOUS_STAGE_PENDING', rlWaiting.length);
+// 대상자별 독립 계산: 같은 팀장이라도 자기평가를 마친 다른 팀원은 평가 가능
+check('대상자별 독립: 같은 팀장도 자기평가를 마친 다른 팀원은 평가 가능',
+  (await itemsOf(realLeader)).some((i: any) => i.eval_type === 'leader_to_member' && i.editable));
+
+// 테스트 8: 임원 자기평가 완료 + 팀원 자기평가 미완료 → 불가 (부서 담당 임원 김대양으로 확인)
+const realExec = new Client();
+await realExec.login('김대양', 'E0001');
+const reSelf = await itemOf(realExec, 'self');
+if (reSelf.state !== 'submitted') await submitItem(realExec, reSelf.id);
+const reWaiting = (await itemsOf(realExec)).filter((i: any) => i.eval_type === 'exec_to_member' && i.state === 'waiting');
+check('테스트 8: 임원 자기평가 완료 + 팀원 자기평가 미완료 → 임원은 그 팀원 평가 불가',
+  (await itemOf(realExec, 'self')).state === 'submitted' && reWaiting.length > 0
+  && (await draftCode(realExec, reWaiting[0].id)) === 'PREVIOUS_STAGE_PENDING', reWaiting.length);
 
 server.close();
 console.log(`\n결과: ${passed} passed, ${failed} failed`);

@@ -934,6 +934,9 @@ const ja: Record<string, string> = {
   'evalSite.allDoneDesc': 'お疲れさまでした。点数や結果は公開されません。修正が必要な場合は人事担当者にお問い合わせください。',
   'evalSite.noAssignments': '現在入力する評価はありません',
   'evalSite.noAssignmentsDesc': '評価が始まるとここに表示されます。',
+  'evalSite.waitingFor.self': '評価対象者の自己評価が完了した後に評価を進めることができます。',
+  'evalSite.waitingNote': '評価対象者が提出すると自動的に入力できるようになります。ご自身の自己評価とは関係ありません。',
+  'evalSite.waitShort.self': '自己評価待ち',
 };
 
 export default ja;

@@ -934,6 +934,9 @@ const ru: Record<string, string> = {
   'evalSite.allDoneDesc': 'Спасибо. Баллы и результаты не показываются; для изменений обратитесь в отдел кадров.',
   'evalSite.noAssignments': 'Сейчас нет оценок для заполнения',
   'evalSite.noAssignmentsDesc': 'Оценки появятся здесь после начала.',
+  'evalSite.waitingFor.self': 'Оценку можно провести после того, как оцениваемый сотрудник завершит самооценку.',
+  'evalSite.waitingNote': 'Откроется автоматически после отправки. Ваша собственная самооценка не влияет.',
+  'evalSite.waitShort.self': 'Ждёт самооценки',
 };
 
 export default ru;

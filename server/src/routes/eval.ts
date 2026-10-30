@@ -18,7 +18,7 @@ import { requirePerm } from '../auth.ts';
 import { config } from '../config.ts';
 import { getFormFull, publishedFormId } from '../services/forms.ts';
 import {
-  stageIsOpen, previousStagesDone, stageDeadline, deadlinePassed, evalTypeOf, validateAnswers,
+  stageIsOpen, pendingPreviousStage, stageDeadline, deadlinePassed, evalTypeOf, validateAnswers,
 } from '../services/rounds.ts';
 import { isAnswered, loadAnswers, saveAssignmentScore, type Stage } from '../scoring.ts';
 
@@ -41,19 +41,23 @@ const SELECT = `
 
 type EvalState = 'not_started' | 'in_progress' | 'submitted' | 'closed' | 'not_open' | 'waiting';
 
-/** 평가자 화면 상태: 미시작/작성 중/제출 완료/마감 + 시작 전(단계 미오픈)/대기(선행 평가 미완료) */
-function stateOf(a: any): { state: EvalState; editable: boolean } {
+/**
+ * 평가자 화면 상태: 미시작/작성 중/제출 완료/마감 + 시작 전(단계 미오픈)/대기(평가 대상자의 자기평가 미제출)
+ * 대기 여부는 평가 대상자의 자기평가만 본다 (평가자 본인의 자기평가 여부와는 무관)
+ */
+function stateOf(a: any): { state: EvalState; editable: boolean; waitingFor?: Stage } {
   if (a.status === 'submitted') return { state: 'submitted', editable: false };
   const stage = a.stage as Stage;
   if (a.round_status === 'closed' || a[`${stage}_status`] === 'closed' || deadlinePassed(a, stage) || a.finalized) return { state: 'closed', editable: false };
   if (!stageIsOpen(a, stage)) return { state: 'not_open', editable: false };
-  if (a.enforce_sequence && !previousStagesDone(a.round_id, a.target_employee_id, stage)) return { state: 'waiting', editable: false };
+  const pending = a.enforce_sequence ? pendingPreviousStage(a.round_id, a.target_employee_id, stage) : null;
+  if (pending) return { state: 'waiting', editable: false, waitingFor: pending };
   return { state: a.status as EvalState, editable: true };
 }
 
 /** 목록·상세 공통 요약 (최소 정보) */
 function summary(a: any) {
-  const { state, editable } = stateOf(a);
+  const { state, editable, waitingFor } = stateOf(a);
   const dl = stageDeadline(a, a.stage);
   return {
     id: a.id,
@@ -63,6 +67,8 @@ function summary(a: any) {
     target: a.stage === 'self' ? null : { name: a.target_name, department: a.target_department, position: a.target_position },
     state,
     editable,
+    /** 대기 중일 때 기다리는 평가 대상자의 단계 (self = 평가 대상자의 자기평가) */
+    waiting_for: waitingFor ?? null,
     deadline_date: dl.date,
     deadline_at: dl.at,
     submitted_at: a.submitted_at,

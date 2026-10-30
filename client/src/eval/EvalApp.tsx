@@ -24,7 +24,10 @@ type EvalState = 'not_started' | 'in_progress' | 'submitted' | 'closed' | 'not_o
 interface Item {
   id: number; round_id: number; round_name: string; eval_type: EvalType;
   target: { name: string; department: string | null; position: string | null } | null;
-  state: EvalState; editable: boolean; deadline_date: string; deadline_at: string; submitted_at: string | null; last_saved_at: string | null;
+  state: EvalState; editable: boolean;
+  /** 대기 중일 때 기다리는 평가 대상자의 단계 (self: 평가 대상자의 자기평가) */
+  waiting_for: 'self' | null;
+  deadline_date: string; deadline_at: string; submitted_at: string | null; last_saved_at: string | null;
 }
 interface Home { me: { name: string; role: string }; server_now: string; tz_offset: string; items: Item[] }
 
@@ -203,7 +206,10 @@ function TargetList({ items, now, tz, t, onPick }: { items: Item[]; now: number;
             <button onClick={() => onPick(i)} className="flex w-full flex-wrap items-center gap-3 px-5 py-3.5 text-left hover:bg-brand-50/50">
               <span className="min-w-0 flex-1"><TargetLine item={i} t={t} /></span>
               <DDay compact deadlineAt={i.deadline_at} deadlineDate={i.deadline_date} now={now} tz={tz} />
-              <StateBadge state={i.state} t={t} />
+              <span className="flex flex-col items-end">
+                <StateBadge state={i.state} t={t} />
+                {i.state === 'waiting' && i.waiting_for && <span className="mt-0.5 text-[10px] text-sky-700">{t(`evalSite.waitShort.${i.waiting_for}`)}</span>}
+              </span>
               <ChevronRight className="h-4 w-4 text-slate-400" />
             </button>
           </li>
@@ -248,12 +254,16 @@ function EvalSheet({ item, now, tz, userId, onBack, onSubmitted, onReload, toast
   if (!data) return <>{header}<Spinner /></>;
   if (!data.assignment.editable || !data.form) {
     const s = data.assignment.state;
-    const msg = s === 'submitted' ? t('evalSite.alreadySubmitted') : s === 'closed' ? t('evalSite.closedHint') : s === 'waiting' ? t('evalSite.waitingHint') : t('evalSite.notOpenHint');
+    // 대기: 평가 대상자의 어떤 앞 단계가 남았는지 안내 (평가자 본인의 자기평가와는 무관)
+    const w = data.assignment.waiting_for;
+    const waitMsg = w ? t(`evalSite.waitingFor.${w}`) : t('evalSite.waitingHint');
+    const msg = s === 'submitted' ? t('evalSite.alreadySubmitted') : s === 'closed' ? t('evalSite.closedHint') : s === 'waiting' ? waitMsg : t('evalSite.notOpenHint');
     return (
       <>{header}
         <Card><div className="flex flex-col items-center gap-2 py-6 text-center">
           {s === 'submitted' ? <CheckCircle2 className="h-10 w-10 text-emerald-500" /> : s === 'closed' ? <Lock className="h-10 w-10 text-slate-400" /> : <Hourglass className="h-10 w-10 text-sky-500" />}
           <p className="text-sm text-slate-700">{msg}</p>
+          {s === 'waiting' && <p className="text-xs text-slate-500">{t('evalSite.waitingNote')}</p>}
           {s === 'submitted' && data.assignment.submitted_at && <p className="text-xs text-slate-500">{t('evalSite.submittedAt', { time: fmtDate(data.assignment.submitted_at, navigator.language, true) })}</p>}
         </div></Card>
       </>

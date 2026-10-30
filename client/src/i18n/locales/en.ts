@@ -933,6 +933,9 @@ const en: Record<string, string> = {
   'evalSite.allDoneDesc': 'Thank you. Scores and results are not shown; contact HR if you need to make changes.',
   'evalSite.noAssignments': 'No evaluations to complete right now',
   'evalSite.noAssignmentsDesc': 'Evaluations will appear here once they open.',
+  'evalSite.waitingFor.self': 'You can evaluate once the person being evaluated has completed their self-evaluation.',
+  'evalSite.waitingNote': 'It opens automatically once they submit. Your own self-evaluation does not matter.',
+  'evalSite.waitShort.self': 'Waiting for self-evaluation',
 };
 
 export default en;
