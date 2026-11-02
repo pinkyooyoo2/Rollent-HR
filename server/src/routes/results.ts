@@ -63,6 +63,50 @@ resultsRouter.get('/:roundId/adjustments', requirePerm('results.view'), h((req, 
   });
 }));
 
+/**
+ * 평가 결과 일괄 삭제 (관리자 전용): 차수 전체 또는 선택한 직원
+ *  - 삭제: 해당 직원(평가 대상)의 응답·점수, 제출 상태(배정은 '미시작'으로 되돌림)
+ *  - 보정 점수는 삭제하지 않고 '취소' 처리해 이력 보존
+ *  - 유지: 직원·부서, 평가항목/양식, 차수·가중치·평가자 배정 등 평가 설정
+ *  - 최종 확정된 결과는 건너뜀 (재오픈 후 삭제 가능). 삭제 내역은 활동 로그에 기록
+ */
+resultsRouter.post('/:roundId/delete-results', requirePerm('results.delete'), h((req, res) => {
+  const roundId = idParam(req, 'roundId');
+  roundOr404(roundId);
+  const b = parse(z.object({
+    scope: z.enum(['all', 'selected']),
+    employeeIds: z.array(z.number().int().positive()).max(5000).optional(),
+  }), req.body);
+  if (b.scope === 'selected' && !b.employeeIds?.length) throw new ApiError(400, 'NOTHING_SELECTED');
+  const results = computeRoundResults(roundId);
+  const targets = b.scope === 'all' ? results : results.filter((r) => b.employeeIds!.includes(r.employee_id));
+  const deleted: { emp_no: string; name: string; responses: number }[] = [];
+  const skipped: string[] = [];
+  tx(() => {
+    for (const r of targets) {
+      if (r.finalized) { skipped.push(r.emp_no); continue; }
+      const ids = all<{ id: number }>('SELECT id FROM evaluation_assignments WHERE round_id = ? AND target_employee_id = ?', [roundId, r.employee_id]).map((x) => x.id);
+      const ph = ids.map(() => '?').join(',') || 'NULL';
+      const responses = ids.length ? get<{ c: number }>(`SELECT COUNT(*) AS c FROM evaluation_responses WHERE assignment_id IN (${ph})`, ids)!.c : 0;
+      const scores = ids.length ? get<{ c: number }>(`SELECT COUNT(*) AS c FROM evaluation_scores WHERE assignment_id IN (${ph})`, ids)!.c : 0;
+      const started = ids.length ? get<{ c: number }>(`SELECT COUNT(*) AS c FROM evaluation_assignments WHERE id IN (${ph}) AND status <> 'not_started'`, ids)!.c : 0;
+      const adj = get<{ c: number }>(`SELECT COUNT(*) AS c FROM score_adjustments WHERE round_id = ? AND employee_id = ? AND status = 'active'`, [roundId, r.employee_id])!.c;
+      if (!responses && !scores && !started && !adj) continue;
+      if (ids.length) {
+        run(`DELETE FROM evaluation_responses WHERE assignment_id IN (${ph})`, ids);
+        run(`DELETE FROM evaluation_scores WHERE assignment_id IN (${ph})`, ids);
+        run(`UPDATE evaluation_assignments SET status = 'not_started', submitted_at = NULL, submitted_by = NULL, last_saved_at = NULL, updated_at = ?
+             WHERE id IN (${ph})`, [now(), ...ids]);
+      }
+      run(`UPDATE score_adjustments SET status = 'reverted', reverted_by = ?, reverted_at = ?, revert_reason = ?
+           WHERE round_id = ? AND employee_id = ? AND status = 'active'`, [req.user!.id, now(), '평가 결과 일괄 삭제', roundId, r.employee_id]);
+      deleted.push({ emp_no: r.emp_no, name: r.name, responses });
+    }
+    audit(req, 'results.delete', 'round', roundId, { scope: b.scope, deleted, skippedFinalized: skipped });
+  });
+  res.json({ deleted: deleted.length, skipped: skipped.length });
+}));
+
 /** 최종 점수 보정 (관리자·임원). 보정 점수를 직접 입력하며 계산 점수와 보정 이력은 모두 보존 */
 resultsRouter.post('/:roundId/employees/:employeeId/adjust', requirePerm('results.adjust'), h((req, res) => {
   const roundId = idParam(req, 'roundId');

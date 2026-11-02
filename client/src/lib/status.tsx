@@ -48,6 +48,16 @@ export const JOB_GROUPS = ['office_member', 'office_leader', 'production_member'
 /** 직급 (DB 값은 한글 고정, 화면 표시는 번역) */
 export const POSITIONS = ['임원', '팀장', '차장', '팀원'] as const;
 const POSITION_KEY: Record<string, string> = { 임원: 'executive', 팀장: 'leader', 차장: 'deputy', 팀원: 'member' };
+/** 모든 직원 목록의 공통 정렬: 부서 → 직급(임원·팀장·차장·팀원) → 직원명 (서버 positions.compareOrg 와 동일) */
+export function compareOrg(a: { department_name?: string | null; position?: string | null; name: string },
+  b: { department_name?: string | null; position?: string | null; name: string }): number {
+  const rank = (p?: string | null) => { const i = (POSITIONS as readonly string[]).indexOf(p ?? ''); return i < 0 ? POSITIONS.length : i; };
+  const da = a.department_name ?? '';
+  const db = b.department_name ?? '';
+  if (!da !== !db) return da ? -1 : 1;
+  return da.localeCompare(db, 'ko') || rank(a.position) - rank(b.position) || a.name.localeCompare(b.name, 'ko');
+}
+
 export function posLabel(t: TFn, p: string | null | undefined): string {
   if (!p) return '–';
   return POSITION_KEY[p] ? t(`position.${POSITION_KEY[p]}`) : p;

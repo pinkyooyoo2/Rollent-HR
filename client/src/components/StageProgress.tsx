@@ -54,7 +54,7 @@ export function ProgressSummary({ e, t }: { e: ProgressRow; t: TFn }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className={cx('inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-semibold', TONE[s.kind])}>{label}</span>
-      {s.next && s.kind === 'step_done' && <span className="text-[11px] text-slate-400">{t('dashboard.summary.next', { stage: t(`stage.${s.next}`) })}</span>}
+      {s.next && s.kind === 'step_done' && <span className="text-xs text-slate-400">{t('dashboard.summary.next', { stage: t(`stage.${s.next}`) })}</span>}
     </div>
   );
 }
@@ -73,7 +73,7 @@ export function StageSteps({ e, t }: { e: ProgressRow; t: TFn }) {
         return (
           <li key={s} className="flex items-center gap-1">
             {i > 0 && <span className={cx('h-px w-3', e.stages[seq[i - 1]] === 'submitted' ? 'bg-emerald-400' : 'bg-slate-200')} aria-hidden />}
-            <span className={cx('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium', cls)}
+            <span className={cx('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium', cls)}
               title={`${i + 1}. ${t(`stage.${s}`)} · ${t(`stageState.${st}`)}`}>
               <b>{i + 1}</b>{t(`dashboard.stageShort.${s}`)}
               {st === 'submitted' && <Check className="h-3 w-3" />}

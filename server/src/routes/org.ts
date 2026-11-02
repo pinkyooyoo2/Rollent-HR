@@ -6,7 +6,10 @@ import { requirePerm, hashPassword } from '../auth.ts';
 import { sendCsv } from '../csv.ts';
 import { computeEmployeeResult } from '../scoring.ts';
 import { newDeptCode } from '../services/csvKinds.ts';
-import { POSITIONS, DEFAULT_POSITION, positionFlags } from '../positions.ts';
+import { POSITIONS, DEFAULT_POSITION, positionFlags, compareOrg } from '../positions.ts';
+
+/** 메모는 관리자만 열람 */
+const withMemo = (req: { user?: { role: string } }, e: any) => (e && req.user?.role !== 'admin' ? { ...e, memo: null } : e);
 
 export const orgRouter = Router();
 
@@ -40,8 +43,8 @@ orgRouter.get('/departments/:id', requirePerm('org.view'), h((req, res) => {
   const id = idParam(req);
   const d = get(`${deptSelect} WHERE d.id = ? AND d.deleted_at IS NULL`, [id]);
   if (!d) throw notFound();
-  const members = all(`SELECT id, emp_no, name, position, title, is_leader, is_executive, status, job_group
-    FROM employees WHERE department_id = ? AND deleted_at IS NULL ORDER BY is_leader DESC, name`, [id]);
+  const members = all<any>(`SELECT id, emp_no, name, position, title, is_leader, is_executive, status, job_group
+    FROM employees WHERE department_id = ? AND deleted_at IS NULL`, [id]).sort(compareOrg);
   res.json({ ...d, members });
 }));
 
@@ -97,6 +100,21 @@ orgRouter.put('/departments/:id', requirePerm('org.manage'), h((req, res) => {
   res.json(get(`${deptSelect} WHERE d.id = ?`, [id]));
 }));
 
+/**
+ * 부서 삭제 (소프트 삭제). 소속 직원(퇴사자 포함, 삭제되지 않은 직원)이 있으면 삭제하지 않음
+ * → 직원을 다른 부서로 이동(재배정)한 뒤 삭제. 평가·KPI 기록은 그대로 보존
+ */
+orgRouter.delete('/departments/:id', requirePerm('org.manage'), h((req, res) => {
+  const id = idParam(req);
+  const d = get<any>('SELECT * FROM departments WHERE id = ? AND deleted_at IS NULL', [id]);
+  if (!d) throw notFound();
+  const members = get<{ c: number }>('SELECT COUNT(*) AS c FROM employees WHERE department_id = ? AND deleted_at IS NULL', [id])!.c;
+  if (members > 0) throw new ApiError(409, 'DEPARTMENT_HAS_MEMBERS', undefined, { count: members });
+  run('UPDATE departments SET deleted_at = ?, leader_employee_id = NULL, updated_at = ? WHERE id = ?', [now(), now(), id]);
+  audit(req, 'department.delete', 'department', id, { code: d.code, name: d.name });
+  res.json({ ok: true });
+}));
+
 orgRouter.put('/departments/:id/leader', requirePerm('org.manage'), h((req, res) => {
   const id = idParam(req);
   const b = parse(z.object({ employeeId: z.number().int().positive().nullable() }), req.body);
@@ -133,9 +151,12 @@ orgRouter.get('/employees', requirePerm('org.view'), h((req, res) => {
   const sortCols: Record<string, string> = {
     name: 'e.name', emp_no: 'e.emp_no', department: 'department_name', position: 'e.position', hire_date: 'e.hire_date', status: 'e.status',
   };
-  const col = sortCols[String(req.query.sort)] ?? 'e.emp_no';
+  const col = sortCols[String(req.query.sort)];
   const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
-  const rows = all(`${empSelect} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${col} ${dir}, e.id`, params);
+  // 기본 정렬: 부서 → 직급 → 직원명 (열 머리글을 누르면 해당 열 기준)
+  let rows = all<any>(`${empSelect} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${col ?? 'e.id'} ${dir}, e.id`, params);
+  if (!col) rows.sort(compareOrg);
+  rows = rows.map((e) => withMemo(req, e));
   if (req.query.all === '1') {
     res.json({ items: rows, total: rows.length });
     return;
@@ -169,7 +190,7 @@ orgRouter.get('/employees/:id', requirePerm('org.view'), h((req, res) => {
       final_score: canSeeScores ? result?.final_score ?? null : undefined,
     };
   });
-  res.json({ ...e, history });
+  res.json({ ...withMemo(req, e), history });
 }));
 
 const empSchema = z.object({
@@ -182,6 +203,7 @@ const empSchema = z.object({
   hire_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().or(z.literal('')),
   email: z.string().trim().email().nullable().optional().or(z.literal('')),
   phone: z.string().trim().max(30).nullable().optional(),
+  memo: z.string().max(2000).nullable().optional(),
 });
 
 orgRouter.post('/employees', requirePerm('org.manage'), h((req, res) => {
@@ -191,10 +213,10 @@ orgRouter.post('/employees', requirePerm('org.manage'), h((req, res) => {
   const position = b.position ?? DEFAULT_POSITION;
   const flags = positionFlags(position);
   const id = run(
-    `INSERT INTO employees (emp_no, name, department_id, position, job_group, is_executive, is_leader, status, hire_date, email, phone)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO employees (emp_no, name, department_id, position, job_group, is_executive, is_leader, status, hire_date, email, phone, memo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [b.emp_no, b.name, b.department_id, position, b.job_group, flags.is_executive, flags.is_leader,
-      b.status, b.hire_date || null, b.email || null, b.phone ?? null]).lastInsertRowid;
+      b.status, b.hire_date || null, b.email || null, b.phone ?? null, b.memo || null]).lastInsertRowid;
   audit(req, 'employee.create', 'employee', id, b);
   res.status(201).json(get(`${empSelect} WHERE e.id = ?`, [id]));
 }));
@@ -208,17 +230,19 @@ orgRouter.put('/employees/:id', requirePerm('org.manage'), h((req, res) => {
   tx(() => {
     const position = b.position ?? before.position ?? DEFAULT_POSITION; // 직급 생략 시 기존 값 유지
     const flags = positionFlags(position);
+    // 이메일·연락처·메모는 요청에 없으면 기존 값 유지 (화면에서 이메일·연락처 입력란을 제거)
     run(`UPDATE employees SET emp_no = ?, name = ?, department_id = ?, position = ?, job_group = ?, is_executive = ?, is_leader = ?,
-         status = ?, hire_date = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?`,
+         status = ?, hire_date = ?, email = ?, phone = ?, memo = ?, updated_at = ? WHERE id = ?`,
       [b.emp_no, b.name, b.department_id, position, b.job_group, flags.is_executive, flags.is_leader,
-        b.status, b.hire_date || null, b.email || null, b.phone ?? null, now(), id]);
+        b.status, b.hire_date || null, b.email === undefined ? before.email : b.email || null, b.phone === undefined ? before.phone : b.phone ?? null,
+        b.memo === undefined ? before.memo : b.memo || null, now(), id]);
     // 부서를 옮기면 기존 부서의 팀장(평가자) 지정은 해제. 직급은 입력값 그대로
     if (before.department_id !== b.department_id) run('UPDATE departments SET leader_employee_id = NULL WHERE leader_employee_id = ?', [id]);
     run('UPDATE users SET emp_no = ?, display_name = ?, email = COALESCE(?, email) WHERE employee_id = ?', [b.emp_no, b.name, b.email || null, id]);
     if (b.status === 'resigned') run('UPDATE users SET is_active = 0 WHERE employee_id = ?', [id]);
   });
   audit(req, 'employee.update', 'employee', id, { before, after: b });
-  res.json(get(`${empSelect} WHERE e.id = ?`, [id]));
+  res.json(withMemo(req, get(`${empSelect} WHERE e.id = ?`, [id])));
 }));
 
 orgRouter.post('/employees/:id/move', requirePerm('org.manage'), h((req, res) => {
@@ -235,7 +259,7 @@ orgRouter.post('/employees/:id/move', requirePerm('org.manage'), h((req, res) =>
   res.json(get(`${empSelect} WHERE e.id = ?`, [id]));
 }));
 
-/** 소프트 삭제: 과거 평가 기록 보존, 로그인 계정 비활성화 */
+/** 소프트 삭제: 평가 대상·배정·응답·점수는 그대로 두어 과거 평가 기록과 데이터 관계를 보존, 로그인 계정 비활성화 */
 orgRouter.delete('/employees/:id', requirePerm('org.manage'), h((req, res) => {
   const id = idParam(req);
   const e = get<any>('SELECT * FROM employees WHERE id = ? AND deleted_at IS NULL', [id]);
@@ -247,8 +271,9 @@ orgRouter.delete('/employees/:id', requirePerm('org.manage'), h((req, res) => {
     run('UPDATE users SET is_active = 0 WHERE employee_id = ?', [id]);
     run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE employee_id = ?)', [id]);
   });
-  audit(req, 'employee.delete', 'employee', id, { emp_no: e.emp_no, name: e.name });
-  res.json({ ok: true });
+  const evaluations = get<{ c: number }>('SELECT COUNT(*) AS c FROM round_targets WHERE employee_id = ?', [id])!.c;
+  audit(req, 'employee.delete', 'employee', id, { emp_no: e.emp_no, name: e.name, evaluationsKept: evaluations });
+  res.json({ ok: true, evaluationsKept: evaluations });
 }));
 
 orgRouter.post('/employees/:id/restore', requirePerm('org.manage'), h((req, res) => {

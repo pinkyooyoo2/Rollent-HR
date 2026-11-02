@@ -87,8 +87,20 @@ function loadUpload(id: number) {
   };
 }
 
+/** 검증 옵션: 직원 업로드는 같은 사람이 먼저 올린(아직 적용 전) 다른 직원 파일의 사번과도 중복을 확인 */
+function effectiveOptions(u: ReturnType<typeof loadUpload>): UploadOptions {
+  if (u.kind !== 'employees') return u.options;
+  const others = all<any>(`SELECT rows, mapping FROM csv_uploads WHERE kind = 'employees' AND status = 'staged' AND uploaded_by = ? AND id < ?`,
+    [u.uploaded_by, u.id]);
+  const empNos = others.flatMap((o) => {
+    const header = parseJson<Record<string, string>>(o.mapping, {}).emp_no;
+    return header ? parseJson<Record<string, string>[]>(o.rows, []).map((r) => String(r[header] ?? '').trim()).filter(Boolean) : [];
+  });
+  return { ...u.options, otherFileEmpNos: empNos };
+}
+
 function withValidation(u: ReturnType<typeof loadUpload>) {
-  const validation = validateUpload(u.kind, u.rows, u.mapping, u.options);
+  const validation = validateUpload(u.kind, u.rows, u.mapping, effectiveOptions(u));
   const { changes, ...rest } = u;
   return { ...rest, has_changes: changes.length > 0, validation, summary: summarize(validation) };
 }
@@ -143,7 +155,7 @@ uploadsRouter.post('/:id/apply', h((req, res) => {
   const u = loadUpload(id);
   checkKind(req, u.kind);
   if (u.status !== 'staged') throw new ApiError(409, 'UPLOAD_NOT_EDITABLE');
-  const validation = validateUpload(u.kind, u.rows, u.mapping, u.options);
+  const validation = validateUpload(u.kind, u.rows, u.mapping, effectiveOptions(u));
   const summary = summarize(validation);
   if (summary.errorRows > 0 && !u.options.skipInvalid) throw new ApiError(400, 'UPLOAD_HAS_ERRORS', undefined, summary);
   if (summary.total - summary.errorRows === 0) throw new ApiError(400, 'UPLOAD_NO_VALID_ROWS');

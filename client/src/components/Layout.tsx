@@ -64,7 +64,7 @@ export default function Layout() {
         {!collapsed && (
           <div className="leading-tight">
             <div className="text-sm font-bold tracking-wider">ROLLENT</div>
-            <div className="text-[11px] text-white/60">{t('common.appShort')}</div>
+            <div className="text-xs text-white/60">{t('common.appShort')}</div>
           </div>
         )}
       </div>
@@ -113,7 +113,7 @@ export default function Layout() {
                 <UserCircle2 className="h-8 w-8 text-brand-600" />
                 <div className="text-left leading-tight">
                   <div className="text-sm font-semibold text-navy-900">{t('header.greeting', { name: user!.display_name })}</div>
-                  <div className="text-[11px] text-slate-500">{t(`role.${user!.role}`)} · {user!.emp_no}</div>
+                  <div className="text-xs text-slate-500">{t(`role.${user!.role}`)} · {user!.emp_no}</div>
                 </div>
               </button>
               {profileOpen && (
@@ -127,7 +127,7 @@ export default function Layout() {
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <main className="admin-ui min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

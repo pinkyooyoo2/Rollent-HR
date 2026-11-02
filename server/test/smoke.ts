@@ -98,7 +98,17 @@ await admin.req('DELETE', `/employees/${twin.data.id}`);
 console.log('\n[2] 대시보드');
 const dash = await admin.req('GET', '/dashboard');
 check('요약 위젯 데이터', dash.data.summary.totalEmployees === 37 && dash.data.summary.targets > 0, dash.data.summary);
-check('부서별 진행률', dash.data.departments.length === 2);
+check('부서 목록(필터용)', dash.data.departments.length === 2);
+check('요약: 전체 대상자 = 완료자 + 미완료자', dash.data.summary.completed + dash.data.summary.incomplete === dash.data.summary.targets, dash.data.summary);
+const { compareOrg } = await import('../src/positions.ts');
+check('HOME 직원 목록: 부서 → 직급 → 직원명 순', dash.data.employees.every((e: any, i: number, a: any[]) => i === 0 || compareOrg(a[i - 1], e) <= 0));
+// 임원은 자기평가만 적용 → 자기평가를 마치면 완료자 (팀장·임원·팀원→팀장 단계는 해당 없음)
+const execRows = dash.data.employees.filter((e: any) => e.weights.self === 100);
+check('임원: 해당 없는 단계는 na, 자기평가 완료 = 완료', execRows.length > 0 && execRows.every((e: any) =>
+  e.stages.leader === 'na' && e.stages.exec === 'na' && e.stages.upward === 'na'
+  && (e.stages.self === 'submitted') === ['completed', 'finalized'].includes(e.state)), execRows.map((e: any) => [e.name, e.stages, e.state]));
+const empOrder = (await admin.req('GET', '/employees?all=1')).data.items;
+check('직원관리 기본 정렬: 부서 → 직급 → 직원명', empOrder.every((e: any, i: number, a: any[]) => i === 0 || compareOrg(a[i - 1], e) <= 0));
 check('레이아웃 저장', (await admin.req('PUT', '/dashboard/layout', { widgets: [{ id: 'summary', visible: true }] })).status === 200);
 
 console.log('\n[3] 부서/직원');
@@ -113,8 +123,21 @@ const list = await admin.req('GET', '/employees?q=테스트');
 check('직원 검색', list.data.total === 1);
 check('직원 소프트 삭제', (await admin.req('DELETE', `/employees/${newEmp.data.id}`)).status === 200);
 check('삭제 직원 목록 제외', (await admin.req('GET', '/employees?q=T0001')).data.total === 0);
-check('부서 삭제 불가(API 없음)', (await admin.req('DELETE', `/departments/${dept.data.id}`)).status === 404);
 check('부서 수정', (await admin.req('PUT', `/departments/${dept.data.id}`, { code: 'TST', name: '테스트팀2' })).data.name === '테스트팀2');
+// 부서 삭제: 소속 직원이 있으면 409, 직원을 다른 부서로 옮긴 뒤 삭제 가능 (직원의 부서 정보 보존)
+const delDept = await admin.req('POST', '/departments', { name: '삭제테스트팀' });
+const delMember = await admin.req('POST', '/employees', { emp_no: 'T0101', name: '이동대상', department_id: delDept.data.id, job_group: 'office', status: 'active', position: '팀원' });
+check('소속 직원이 있는 부서 삭제 차단(409)', (await admin.req('DELETE', `/departments/${delDept.data.id}`)).data.error === 'DEPARTMENT_HAS_MEMBERS');
+check('직원 부서 이동', (await admin.req('POST', `/employees/${delMember.data.id}/move`, { departmentId: dept.data.id })).data.department_id === dept.data.id);
+check('직원 이동 후 부서 삭제', (await admin.req('DELETE', `/departments/${delDept.data.id}`)).status === 200
+  && !(await admin.req('GET', '/departments')).data.items.some((d: any) => d.id === delDept.data.id));
+check('부서 삭제 후에도 이동한 직원 정보 유지', (await admin.req('GET', `/employees/${delMember.data.id}`)).data.department_id === dept.data.id);
+check('임원은 부서 삭제 불가', (await exec.req('DELETE', `/departments/${dept.data.id}`)).status === 403);
+// 메모: 관리자만 작성·열람, 이메일·연락처는 화면에서 보내지 않아도 기존 값 유지
+const memoEmp = await admin.req('GET', `/employees/${delMember.data.id}`);
+const memoSave = await admin.req('PUT', `/employees/${delMember.data.id}`, { emp_no: 'T0101', name: '이동대상', department_id: dept.data.id, job_group: 'office', status: 'leave', position: '팀원', memo: '면담 예정' });
+check('직원 메모 저장 + 재직상태 수정', memoSave.data.memo === '면담 예정' && memoSave.data.status === 'leave' && memoSave.data.email === memoEmp.data.email);
+await admin.req('DELETE', `/employees/${delMember.data.id}`);
 const autoDept = await admin.req('POST', '/departments', { name: '코드없는부서' });
 check('부서 추가 (코드 자동 생성)', autoDept.status === 201 && /^D\d{3,}$/.test(autoDept.data.code), autoDept.data);
 check('부서 수정 시 코드 유지', (await admin.req('PUT', `/departments/${autoDept.data.id}`, { name: '코드없는부서2' })).data.code === autoDept.data.code);
@@ -290,6 +313,24 @@ check('KPI CSV 적용 결과 (낮을수록 좋음 10/8 = 125%, 기존 지표 실
 check('KPI CSV 되돌리기', (await admin.req('POST', `/uploads/${kup.data.id}/revert`)).data.status === 'reverted'
   && (await admin.req('GET', `/kpi/${r2.id}`)).data.departments.find((d: any) => d.id === off.id).score === 96.5);
 check('KPI CSV 내보내기 (BOM)', (await admin.req('GET', `/kpi/${r2.id}/export.csv`)).bom);
+// 직원 CSV 중복 필터: 기본은 신규만 추가, 기존 사번·먼저 올린 다른 파일의 사번은 중복으로 분류
+const dupA = await admin.req('POST', '/uploads', {
+  kind: 'employees', fileName: 'a.csv', headers: ['사번', '이름'], rows: [{ 사번: 'D9001', 이름: '중복확인' }, { 사번: 'R2001', 이름: '정민호' }],
+  mapping: { emp_no: '사번', name: '이름' }, options: { mode: 'add_only' },
+});
+const dupB = await admin.req('POST', '/uploads', {
+  kind: 'employees', fileName: 'b.csv', headers: ['사번', '이름'], rows: [{ 사번: 'D9001', 이름: '중복확인' }, { 사번: 'D9002', 이름: '중복확인' }, { 사번: 'BAD NO', 이름: 'x' }],
+  mapping: { emp_no: '사번', name: '이름' }, options: { mode: 'add_only', skipInvalid: true },
+});
+check('기존 사번 → 중복(추가 안 함)', dupA.data.summary.create === 1 && dupA.data.summary.duplicate === 1, dupA.data.summary);
+check('다른 업로드 파일과 같은 사번 → 중복, 이름이 같아도 사번이 다르면 신규, 사번 형식 오류', dupB.data.summary.duplicate === 1
+  && dupB.data.summary.create === 1 && dupB.data.summary.errorRows === 1
+  && dupB.data.validation[0].warnings.some((w: any) => w.code === 'DUPLICATE_OTHER_FILE'), dupB.data.summary);
+check('중복 파일 적용: 신규만 추가', (await admin.req('POST', `/uploads/${dupA.data.id}/apply`)).data.status === 'applied'
+  && (await admin.req('POST', `/uploads/${dupB.data.id}/apply`)).data.status === 'applied'
+  && (await admin.req('GET', '/employees?q=중복확인')).data.total === 2
+  && (await admin.req('GET', '/employees?q=R2001')).data.items[0].name === '정민호');
+
 check('직원은 KPI 업로드 불가', (await emp.req('POST', '/uploads', { kind: 'kpis', fileName: 'k.csv', headers: [], rows: [], mapping: {} })).status === 403);
 check('직원은 KPI 조회 불가', (await emp.req('GET', `/kpi/${r2.id}`)).status === 403);
 
@@ -513,6 +554,31 @@ const reWaiting = (await itemsOf(realExec)).filter((i: any) => i.eval_type === '
 check('테스트 8: 임원 자기평가 완료 + 팀원 자기평가 미완료 → 임원은 그 팀원 평가 불가',
   (await itemOf(realExec, 'self')).state === 'submitted' && reWaiting.length > 0
   && (await draftCode(realExec, reWaiting[0].id)) === 'PREVIOUS_STAGE_PENDING', reWaiting.length);
+
+console.log('\n[결과 일괄 삭제]');
+{
+  const rid = (await admin.req('GET', '/dashboard')).data.round.id;
+  const before = (await admin.req('GET', `/results/${rid}`)).data.items;
+  const victim = before.find((r: any) => !r.finalized && Object.values(r.stages).some((s: any) => s.state === 'submitted'));
+  const counts = async () => ({
+    emps: (await admin.req('GET', '/employees?all=1')).data.total,
+    forms: (await admin.req('GET', '/forms')).data.items.length,
+    targets: (await admin.req('GET', `/results/${rid}`)).data.items.length,
+  });
+  const c0 = await counts();
+  check('임원·직원은 결과 삭제 불가', (await exec.req('POST', `/results/${rid}/delete-results`, { scope: 'all' })).status === 403
+    && (await emp.req('POST', `/results/${rid}/delete-results`, { scope: 'all' })).status === 403);
+  check('선택 삭제는 대상 필요', (await admin.req('POST', `/results/${rid}/delete-results`, { scope: 'selected', employeeIds: [] })).status === 400);
+  const del = await admin.req('POST', `/results/${rid}/delete-results`, { scope: 'selected', employeeIds: [victim.employee_id] });
+  const after = (await admin.req('GET', `/results/${rid}`)).data.items;
+  const v2 = after.find((r: any) => r.employee_id === victim.employee_id);
+  check('선택한 결과 삭제 (응답·점수 초기화)', del.data.deleted === 1 && Object.values(v2.stages).every((s: any) => s.state !== 'submitted' && s.score === null), v2?.stages);
+  const other = before.find((r: any) => r.employee_id !== victim.employee_id && r.final_score !== null);
+  check('선택하지 않은 직원 결과는 유지', !other || after.find((r: any) => r.employee_id === other.employee_id).final_score === other.final_score);
+  check('직원·평가항목·평가 대상(설정)은 삭제되지 않음', JSON.stringify(await counts()) === JSON.stringify(c0), [c0, await counts()]);
+  const logs = (await admin.req('GET', '/logs/activity?q=results.delete')).data;
+  check('삭제 이력 기록', JSON.stringify(logs).includes('results.delete'));
+}
 
 server.close();
 console.log(`\n결과: ${passed} passed, ${failed} failed`);

@@ -45,8 +45,8 @@ export default function MyEvaluationsPage() {
                             <td className="td font-medium">{a.target_name} <span className="text-xs text-slate-400">{a.target_emp_no}</span></td>
                             <td className="td">{a.target_department ?? '–'}</td>
                             <td className="td"><StageBadge state={a.status} t={t} />
-                              {a.status !== 'submitted' && !a.stage_open && <div className="mt-1 text-[11px] text-slate-400">{t('my.block.STAGE_NOT_OPEN')}</div>}
-                              {a.status !== 'submitted' && a.stage_open && !a.sequence_ok && <div className="mt-1 text-[11px] text-slate-400">{t('my.block.PREVIOUS_STAGE_PENDING')}</div>}
+                              {a.status !== 'submitted' && !a.stage_open && <div className="mt-1 text-xs text-slate-400">{t('my.block.STAGE_NOT_OPEN')}</div>}
+                              {a.status !== 'submitted' && a.stage_open && !a.sequence_ok && <div className="mt-1 text-xs text-slate-400">{t('my.block.PREVIOUS_STAGE_PENDING')}</div>}
                             </td>
                             <td className="td text-xs text-slate-500">{fmtDate(a.submitted_at ?? a.updated_at, locale, true)}</td>
                             <td className="td text-right">

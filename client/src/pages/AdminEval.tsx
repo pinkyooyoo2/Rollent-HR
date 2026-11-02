@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, Modal, PageHeader, Pagination, ProgressBar, SearchInput, Spinner, Tabs, cx } from '../components/ui';
 import AssignmentView from '../components/AssignmentView';
 import EvaluationForm from '../components/EvaluationForm';
-import { StageBadge, STAGES, fmtDate, JOB_GROUPS, type Stage, posLabel } from '../lib/status';
+import { StageBadge, STAGES, fmtDate, JOB_GROUPS, type Stage, posLabel, compareOrg } from '../lib/status';
 
 type Tab = 'progress' | 'preview' | 'logs';
 
@@ -82,7 +82,8 @@ function RoundManager() {
     (!q || i.name.includes(q) || i.emp_no.includes(q) || (i.department_name ?? '').includes(q))
     && (!dept || String(i.department_id) === dept)
     && (!onlyPending || STAGES.some((s) => !['na', 'submitted'].includes(i.stages[s].state)))
-    && (!stageFilter || (() => { const [s, st] = stageFilter.split(':'); return i.stages[s].state === st || (st === 'pending' && !['na', 'submitted'].includes(i.stages[s].state)); })()));
+    && (!stageFilter || (() => { const [s, st] = stageFilter.split(':'); return i.stages[s].state === st || (st === 'pending' && !['na', 'submitted'].includes(i.stages[s].state)); })()))
+    .sort(compareOrg);
   const stageStats = STAGES.map((s) => {
     const req = items.filter((i) => i.stages[s].state !== 'na');
     return { stage: s, total: req.length, done: req.filter((i) => i.stages[s].state === 'submitted').length, unassigned: req.filter((i) => i.stages[s].state === 'unassigned').length };
@@ -130,12 +131,12 @@ function RoundManager() {
                   <span className="font-semibold text-navy-900">{s.total ? Math.round((s.done / s.total) * 100) : 0}%</span>
                 </div>
                 <ProgressBar value={s.total ? (s.done / s.total) * 100 : 0} className="mt-1" color="bg-teal-500" />
-                {s.unassigned > 0 && <div className="mt-1 text-[11px] text-red-600">{t('admin.unassignedN', { n: s.unassigned })}</div>}
+                {s.unassigned > 0 && <div className="mt-1 text-xs text-red-600">{t('admin.unassignedN', { n: s.unassigned })}</div>}
                 {manage && (
                   <div className="mt-2 flex gap-1">
                     {(['pending', 'open', 'closed'] as const).map((st) => (
                       <button key={st} disabled={r[`${s.stage}_status`] === st} onClick={() => call(() => api.post(`/rounds/${r.id}/stage`, { stage: s.stage, status: st }))}
-                        className={cx('flex-1 rounded border px-1 py-1 text-[11px]', r[`${s.stage}_status`] === st ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 hover:bg-slate-50')}>
+                        className={cx('flex-1 rounded border px-1 py-1 text-xs', r[`${s.stage}_status`] === st ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 hover:bg-slate-50')}>
                         {t(`stageAction.${st}`)}
                       </button>
                     ))}
@@ -165,15 +166,16 @@ function RoundManager() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead><tr>
-                  <th className="th">{t('common.employeeName')}</th><th className="th">{t('common.department')}</th><th className="th">{t('admin.jobGroup')}</th>
+                  <th className="th">{t('common.department')}</th><th className="th">{t('common.position')}</th><th className="th">{t('common.employeeName')}</th><th className="th">{t('admin.jobGroup')}</th>
                   {STAGES.map((s) => <th key={s} className="th min-w-[190px]">{t(`stage.${s}`)}</th>)}
                   {manage && <th className="th" />}
                 </tr></thead>
                 <tbody>
                   {filtered.slice((page - 1) * pageSize, page * pageSize).map((i) => (
                     <tr key={i.employee_id} className="align-top hover:bg-slate-50">
-                      <td className="td"><div className="font-medium">{i.name}</div><div className="text-xs text-slate-400">{i.emp_no}</div></td>
                       <td className="td whitespace-nowrap">{i.department_name ?? '–'}</td>
+                      <td className="td whitespace-nowrap">{posLabel(t, i.position)}</td>
+                      <td className="td"><div className="font-medium">{i.name}</div><div className="text-xs text-slate-400">{i.emp_no}</div></td>
                       <td className="td text-xs">{t(`jobGroupFull.${i.job_group}`)}<div className="text-slate-400">{i.weights.self}/{i.weights.leader}/{i.weights.exec}/{i.weights.upward}</div></td>
                       {STAGES.map((s) => {
                         const st = i.stages[s];
@@ -371,7 +373,7 @@ function UpwardModal({ roundId, target, manage, onView, onReopen, onClose }:
           <div className="min-w-[240px] flex-1"><Field label={t('admin.addEvaluator')}>
             <select className="input" value={add} onChange={(e) => setAdd(Number(e.target.value) || '')}>
               <option value="">–</option>
-              {cand.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.emp_no}) · {e.department_name ?? '-'} · {posLabel(t, e.position)}</option>)}
+              {cand.map((e) => <option key={e.id} value={e.id}>{e.department_name ?? '-'} · {posLabel(t, e.position)} · {e.name} ({e.emp_no})</option>)}
             </select>
           </Field></div>
           <Button disabled={!add} icon={<UserPlus className="h-4 w-4" />} onClick={() => call(async () => {
@@ -408,7 +410,7 @@ function EvaluatorModal({ roundId, target, stage, onClose, onSaved }: { roundId:
       <div className="relative mb-2"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('org.searchEmp')} /></div>
       <select className="input" size={10} value={sel} onChange={(e) => setSel(Number(e.target.value) || '')}>
         <option value="">{t('admin.noEvaluator')}</option>
-        {cand.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.emp_no}) · {e.department_name ?? '-'} · {posLabel(t, e.position)}</option>)}
+        {cand.map((e) => <option key={e.id} value={e.id}>{e.department_name ?? '-'} · {posLabel(t, e.position)} · {e.name} ({e.emp_no})</option>)}
       </select>
     </Modal>
   );
@@ -435,7 +437,7 @@ function AddTargetsModal({ roundId, existing, onClose, onSaved }: { roundId: num
           {emps.map((e) => (
             <li key={e.id}><label className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
               <input type="checkbox" checked={sel.has(e.id)} onChange={(x) => { const s = new Set(sel); if (x.target.checked) s.add(e.id); else s.delete(e.id); setSel(s); }} />
-              <span className="font-medium">{e.name}</span><span className="text-xs text-slate-400">{e.emp_no} · {e.department_name ?? '-'}</span>
+              <span className="text-slate-500">{e.department_name ?? '-'} · {posLabel(t, e.position)}</span><span className="font-medium">{e.name}</span><span className="text-xs text-slate-400">{e.emp_no}</span>
             </label></li>
           ))}
         </ul>
@@ -504,7 +506,7 @@ function LogsTab() {
                   {kind === 'activity' ? <>
                     <td className="td"><code className="rounded bg-slate-100 px-1.5 py-0.5">{l.action}</code><div className="text-slate-500">{t(`action.${l.action}`) !== `action.${l.action}` ? t(`action.${l.action}`) : ''}</div></td>
                     <td className="td">{l.entity_type ? `${l.entity_type}#${l.entity_id ?? ''}` : '–'}</td>
-                    <td className="td max-w-md truncate font-mono text-[11px] text-slate-500" title={l.details ?? ''}>{l.details ?? ''}</td>
+                    <td className="td max-w-md truncate font-mono text-xs text-slate-500" title={l.details ?? ''}>{l.details ?? ''}</td>
                   </> : <>
                     <td className="td font-mono">{l.method} {l.path}</td>
                     <td className="td"><Badge color={l.status < 400 ? 'green' : l.status < 500 ? 'amber' : 'red'}>{l.status}</Badge></td>

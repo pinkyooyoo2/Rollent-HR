@@ -119,6 +119,8 @@ export interface UploadOptions {
   questionMode?: 'append' | 'replace';
   roundId?: number;
   uploadId?: number;
+  /** 같은 업로드 묶음에서 먼저 올린 다른 파일의 사번 (파일 간 중복 확인용, 저장하지 않음) */
+  otherFileEmpNos?: string[];
 }
 
 export function validateUpload(kind: Kind, rawRows: Record<string, string>[], mapping: Record<string, string>, options: UploadOptions): ValidatedRow[] {
@@ -133,6 +135,7 @@ export function validateUpload(kind: Kind, rawRows: Record<string, string>[], ma
   if (kind === 'employees') {
     const depts = all<any>('SELECT id, code, name FROM departments WHERE deleted_at IS NULL');
     const seen = new Map<string, number>();
+    const otherFiles = new Set(options.otherFileEmpNos ?? []);
     for (const v of out) {
       const r = v.record;
       if (r.emp_no) {
@@ -140,7 +143,11 @@ export function validateUpload(kind: Kind, rawRows: Record<string, string>[], ma
         if (seen.has(r.emp_no)) v.errors.push({ field: 'emp_no', code: 'DUPLICATE_IN_FILE' });
         seen.set(r.emp_no, v.index);
         const exists = get<any>('SELECT id FROM employees WHERE emp_no = ?', [r.emp_no]);
-        if (exists) {
+        // 사번이 고유 식별값: 이름이 같아도 사번이 다르면 다른 직원
+        if (otherFiles.has(r.emp_no)) {
+          v.action = 'skip';
+          v.warnings.push({ field: 'emp_no', code: 'DUPLICATE_OTHER_FILE' });
+        } else if (exists) {
           v.action = options.mode === 'add_only' ? 'skip' : 'update';
           v.warnings.push({ field: 'emp_no', code: options.mode === 'add_only' ? 'EXISTS_SKIP' : 'EXISTS_OVERWRITE' });
           r.id = exists.id;
@@ -325,6 +332,9 @@ export function summarize(rows: ValidatedRow[]) {
     create: rows.filter((r) => !r.errors.length && r.action === 'create').length,
     update: rows.filter((r) => !r.errors.length && r.action === 'update').length,
     skip: rows.filter((r) => !r.errors.length && r.action === 'skip').length,
+    /** 기존 데이터 또는 다른 업로드 파일과 중복되어 추가하지 않는 행 */
+    duplicate: rows.filter((r) => !r.errors.length && r.action === 'skip'
+      && r.warnings.some((w) => w.code === 'EXISTS_SKIP' || w.code === 'DUPLICATE_OTHER_FILE')).length,
     import: rows.filter((r) => !r.errors.length && r.action === 'import').length,
   };
 }

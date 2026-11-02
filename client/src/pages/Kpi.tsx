@@ -144,7 +144,7 @@ export default function KpiPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="mt-1.5 text-[11px] text-slate-400">{t(`kpi.dir.${x.direction}`)}</div>
+                      <div className="mt-1.5 text-xs text-slate-400">{t(`kpi.dir.${x.direction}`)}</div>
                     </div>
                   ))}
                 </section>

@@ -18,6 +18,23 @@ const ALIASES: Record<string, Position> = {
   팀원: '팀원', member: '팀원', 'team member': '팀원',
 };
 
+/** 직급 정렬 순서 (임원 → 팀장 → 차장 → 팀원, 그 외 값은 뒤로) */
+export function positionRank(p: string | null | undefined): number {
+  const i = (POSITIONS as readonly string[]).indexOf(String(p ?? ''));
+  return i < 0 ? POSITIONS.length : i;
+}
+
+/** 모든 직원 목록의 공통 정렬: 부서 → 직급 → 직원명 (부서 없음은 맨 뒤) */
+export function compareOrg(
+  a: { department_name?: string | null; position?: string | null; name: string },
+  b: { department_name?: string | null; position?: string | null; name: string },
+): number {
+  const da = a.department_name ?? '';
+  const db = b.department_name ?? '';
+  if (!da !== !db) return da ? -1 : 1;
+  return da.localeCompare(db, 'ko') || positionRank(a.position) - positionRank(b.position) || a.name.localeCompare(b.name, 'ko');
+}
+
 /** CSV 등 외부 입력값을 직급으로 변환 (빈 값은 팀원, 알 수 없는 값은 null) */
 export function normalizePosition(v: string | null | undefined): Position | null {
   const s = String(v ?? '').trim();

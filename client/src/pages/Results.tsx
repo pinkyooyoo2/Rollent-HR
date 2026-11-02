@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, Lock, Unlock, PencilLine, Undo2, ShieldAlert, Eye, CheckCircle2, MessageSquareText, FileText, FileDown } from 'lucide-react';
+import { Download, Lock, Unlock, PencilLine, Undo2, ShieldAlert, Eye, CheckCircle2, MessageSquareText, FileText, FileDown, Trash2 } from 'lucide-react';
 import { api, downloadFile } from '../lib/api';
 import { useI18n, errorMessage } from '../i18n';
 import { useAuth } from '../auth/AuthContext';
@@ -61,6 +61,7 @@ function ResultsTable({ roundId }: { roundId: number }) {
   const [detail, setDetail] = useState<number | null>(null);
   const [finalize, setFinalize] = useState(false);
   const [adjRow, setAdjRow] = useState<any | null>(null);
+  const [delOpen, setDelOpen] = useState(false);
   const report = useEmployeeReport(roundId, data?.round?.year);
 
   const load = useCallback(() => {
@@ -82,6 +83,7 @@ function ResultsTable({ roundId }: { roundId: number }) {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <Spinner />;
   const finalizable = rows.filter((r) => sel.has(r.employee_id) && r.state === 'completed');
+  const selectable = can('results.finalize') || can('results.delete');
 
   return (
     <div className="card">
@@ -106,16 +108,23 @@ function ResultsTable({ roundId }: { roundId: number }) {
         </div>
       </div>
       {!can('results.adjust') && <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-500"><ShieldAlert className="h-4 w-4" />{t('results.viewOnlyNote')}</div>}
+      {/* 결과 삭제: 조회·검색 영역과 분리한 별도 영역 (관리자 전용) */}
+      {can('results.delete') && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100 bg-red-50/40 px-4 py-2.5">
+          <p className="text-sm text-slate-600"><span className="font-semibold text-red-700">{t('results.deleteZone')}</span> · {sel.size ? t('results.selectedN', { n: sel.size }) : t('results.deleteSelectHint')}</p>
+          <Button variant="secondary" className="!border-red-300 !text-red-600 hover:!bg-red-50" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDelOpen(true)}>{t('results.bulkDelete')}</Button>
+        </div>
+      )}
       {rows.length === 0 ? <EmptyState /> : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead><tr>
-              {can('results.finalize') && <th className="th w-8"><input type="checkbox" aria-label={t('common.selectAll')} checked={rows.length > 0 && rows.every((r) => sel.has(r.employee_id))}
+              {selectable && <th className="th w-8"><input type="checkbox" aria-label={t('common.selectAll')} checked={rows.length > 0 && rows.every((r) => sel.has(r.employee_id))}
                 onChange={(e) => setSel(e.target.checked ? new Set(rows.map((r) => r.employee_id)) : new Set())} /></th>}
-              <SortHeader label={t('common.empNo')} col="emp_no" sort={sort} onSort={onSort} />
-              <SortHeader label={t('common.employeeName')} col="name" sort={sort} onSort={onSort} />
               <SortHeader label={t('common.department')} col="department_name" sort={sort} onSort={onSort} />
-              {mode === 'simple' ? <SortHeader label={t('common.position')} col="position" sort={sort} onSort={onSort} /> : <>
+              <SortHeader label={t('common.position')} col="position" sort={sort} onSort={onSort} />
+              <SortHeader label={t('common.employeeName')} col="name" sort={sort} onSort={onSort} />
+              {mode === 'detail' && <>
                 {STAGES.map((s) => <SortHeader key={s} label={t(`results.stageScore.${s}`)} col={s} sort={sort} onSort={onSort} className="text-right" />)}
                 <th className="th">{t('results.weights')}</th>
                 <SortHeader label={t('results.weighted')} col="weighted_score" sort={sort} onSort={onSort} className="text-right" />
@@ -128,12 +137,12 @@ function ResultsTable({ roundId }: { roundId: number }) {
             <tbody>
               {rows.slice((page - 1) * pageSize, page * pageSize).map((r) => (
                 <tr key={r.employee_id} className="hover:bg-slate-50">
-                  {can('results.finalize') && <td className="td"><input type="checkbox" checked={sel.has(r.employee_id)} aria-label={r.name}
+                  {selectable && <td className="td"><input type="checkbox" checked={sel.has(r.employee_id)} aria-label={r.name}
                     onChange={(e) => { const s = new Set(sel); if (e.target.checked) s.add(r.employee_id); else s.delete(r.employee_id); setSel(s); }} /></td>}
-                  <td className="td font-mono text-xs">{r.emp_no}</td>
-                  <td className="td font-medium">{r.name}</td>
                   <td className="td whitespace-nowrap">{r.department_name ?? '–'}</td>
-                  {mode === 'simple' ? <td className="td">{posLabel(t, r.position)}</td> : <>
+                  <td className="td whitespace-nowrap">{posLabel(t, r.position)}</td>
+                  <td className="td font-medium">{r.name}</td>
+                  {mode === 'detail' && <>
                     {STAGES.map((s) => <td key={s} className="td text-right">{r.stages[s].state === 'na' ? <span className="text-xs text-slate-300">N/A</span> : r.stages[s].score === null ? <StageBadge state={r.stages[s].state} t={t} /> : fmtScore(r.stages[s].score)}</td>)}
                     <td className="td font-mono text-xs text-slate-500">{r.weights.self}/{r.weights.leader}/{r.weights.exec}/{r.weights.upward}</td>
                     <td className="td text-right">{fmtScore(r.weighted_score)}</td>
@@ -170,12 +179,65 @@ function ResultsTable({ roundId }: { roundId: number }) {
       {detail && <ResultDetail roundId={roundId} employeeId={detail} report={report} onClose={() => setDetail(null)} onChanged={load} />}
       {adjRow && <AdjustModal roundId={roundId} employee={{ id: adjRow.employee_id, name: adjRow.name }} result={adjRow} onClose={() => setAdjRow(null)} onSaved={() => { setAdjRow(null); load(); }} />}
       {report.node}
+      {delOpen && <BulkDeleteModal roundId={roundId} roundName={data.round?.name ?? ''} all={data.items} selected={data.items.filter((r) => sel.has(r.employee_id))}
+        onClose={() => setDelOpen(false)} onDeleted={() => { setDelOpen(false); setSel(new Set()); load(); }} />}
       <ConfirmDialog open={finalize} onClose={() => setFinalize(false)} title={t('results.finalizeTitle')} message={t('results.finalizeMsg', { n: finalizable.length })} confirmLabel={t('results.finalize')}
         onConfirm={async () => {
           try { const r = await api.post(`/results/${roundId}/finalize`, { employeeIds: finalizable.map((x) => x.employee_id) }); toast('success', t('results.finalized', { n: r.finalized })); setSel(new Set()); load(); }
           catch (e) { toast('error', errorMessage(t, e)); throw e; }
         }} />
     </div>
+  );
+}
+
+/**
+ * 평가 결과 일괄 삭제 확인 팝업: 삭제 범위(선택/전체)와 대상을 보여주고, 삭제를 눌러야만 실행
+ * 응답·점수만 삭제하고 직원·평가항목·평가 설정은 유지. 최종 확정된 결과는 제외
+ */
+function BulkDeleteModal({ roundId, roundName, all, selected, onClose, onDeleted }:
+  { roundId: number; roundName: string; all: any[]; selected: any[]; onClose: () => void; onDeleted: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [scope, setScope] = useState<'selected' | 'all'>(selected.length ? 'selected' : 'all');
+  const [busy, setBusy] = useState(false);
+  const targets = scope === 'all' ? all : selected;
+  const finalized = targets.filter((r) => r.finalized).length;
+  const names = targets.slice(0, 10).map((r) => `${r.department_name ?? '–'} · ${posLabel(t, r.position)} · ${r.name}`);
+  return (
+    <Modal open onClose={onClose} title={t('results.bulkDeleteTitle')} footer={<>
+      <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
+      <Button variant="danger" loading={busy} disabled={!targets.length} icon={<Trash2 className="h-4 w-4" />} onClick={async () => {
+        setBusy(true);
+        try {
+          const r = await api.post(`/results/${roundId}/delete-results`, { scope, employeeIds: scope === 'selected' ? selected.map((x) => x.employee_id) : undefined });
+          toast('success', r.skipped ? t('results.bulkDeletedSkipped', { n: r.deleted, s: r.skipped }) : t('results.bulkDeleted', { n: r.deleted }));
+          onDeleted();
+        } catch (e) { toast('error', errorMessage(t, e)); } finally { setBusy(false); }
+      }}>{t('common.delete')}</Button>
+    </>}>
+      <div className="space-y-4 text-sm">
+        <div>
+          <div className="label">{t('results.deleteScope')}</div>
+          <label className={cx('flex items-center gap-2 py-1', !selected.length && 'text-slate-400')}>
+            <input type="radio" disabled={!selected.length} checked={scope === 'selected'} onChange={() => setScope('selected')} />{t('results.scopeSelected', { n: selected.length })}
+          </label>
+          <label className="flex items-center gap-2 py-1">
+            <input type="radio" checked={scope === 'all'} onChange={() => setScope('all')} />{t('results.scopeAll', { round: roundName, n: all.length })}
+          </label>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="font-semibold text-slate-700">{t('results.deleteTargets', { n: targets.length })}</div>
+          <p className="mt-1 text-slate-600">{names.join(', ')}{targets.length > 10 ? ` ${t('results.andMore', { n: targets.length - 10 })}` : ''}</p>
+          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-slate-500">
+            <li>{t('results.deleteWhat')}</li>
+            <li>{t('results.deleteKeeps')}</li>
+            {finalized > 0 && <li className="text-amber-700">{t('results.deleteSkipFinalized', { n: finalized })}</li>}
+            <li>{t('results.deleteLogged')}</li>
+          </ul>
+        </div>
+        <p className="rounded-lg bg-red-50 p-3 font-medium text-red-700">{t('results.deleteConfirmMsg')}</p>
+      </div>
+    </Modal>
   );
 }
 
@@ -197,7 +259,6 @@ function ResultDetail({ roundId, employeeId, report, onClose, onChanged }: { rou
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl font-bold text-navy-900">{d.employee.name}</span>
-            <code className="rounded bg-slate-100 px-2 py-0.5 text-xs">{d.employee.emp_no}</code>
             <span className="text-sm text-slate-500">{d.employee.department_name} · {posLabel(t, d.employee.position)}</span>
             <OverallBadge state={r.state} t={t} />
           </div>
@@ -206,14 +267,14 @@ function ResultDetail({ roundId, employeeId, report, onClose, onChanged }: { rou
               <div key={s} className="rounded-lg border border-slate-200 p-3">
                 <div className="text-xs text-slate-500">{t(`stage.${s}`)} <span className="text-slate-400">({r.weights[s]}%)</span></div>
                 <div className="text-lg font-bold">{r.stages[s].state === 'na' ? 'N/A' : fmtScore(r.stages[s].score)}</div>
-                <div className="text-[11px] text-slate-400">{s === 'upward' ? t('admin.upwardCount', { done: r.stages[s].submitted_count ?? 0, total: r.stages[s].total_count ?? 0 }) : r.stages[s].evaluator_name ?? ''}</div>
+                <div className="text-xs text-slate-400">{s === 'upward' ? t('admin.upwardCount', { done: r.stages[s].submitted_count ?? 0, total: r.stages[s].total_count ?? 0 }) : r.stages[s].evaluator_name ?? ''}</div>
               </div>
             ))}
             <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">{t('results.weighted')}</div><div className="text-lg font-bold">{fmtScore(r.weighted_score)}</div></div>
             {r.kpi_ratio && <div className="rounded-lg border border-teal-200 bg-teal-50/50 p-3"><div className="text-xs text-teal-700">{t('results.kpiScore')} <span className="text-teal-600/70">({r.kpi_ratio.kpi}%)</span></div><div className="text-lg font-bold text-teal-700">{fmtKpi(r.kpi_score)}</div></div>}
             <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3"><div className="text-xs text-violet-700">{t('results.adjusted')}</div><div className="text-lg font-bold text-violet-700">{fmtScore(r.adjusted_score)}</div></div>
             <div className="rounded-lg bg-navy-900 p-3 text-white"><div className="text-xs text-white/70">{t('results.confirmedScore')}</div><div className="text-2xl font-bold">{fmtScore(r.final_score)}</div>
-              {r.finalized_at && <div className="text-[11px] text-white/60">{fmtDate(r.finalized_at, locale)}</div>}</div>
+              {r.finalized_at && <div className="text-xs text-white/60">{fmtDate(r.finalized_at, locale)}</div>}</div>
           </div>
           <div className="flex flex-wrap gap-2">
             {can('results.adjust') && !r.finalized && r.computed_score !== null && <Button icon={<PencilLine className="h-4 w-4" />} onClick={() => setAdjOpen(true)}>{t('results.adjust')}</Button>}
@@ -355,7 +416,7 @@ function AdjustmentsTab({ roundId }: { roundId: number }) {
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr><th className="th">{t('common.date')}</th><th className="th">{t('common.employeeName')}</th><th className="th text-right">{t('results.computed')}</th><th className="th text-right">{t('results.before')}</th><th className="th text-right">{t('results.after')}</th><th className="th">{t('common.reason')}</th><th className="th">{t('results.adjustedBy')}</th><th className="th">{t('common.status')}</th></tr></thead>
           <tbody>{items.map((a) => (
-            <tr key={a.id}><td className="td text-xs">{fmtDate(a.adjusted_at, locale, true)}</td><td className="td">{a.employee_name} <span className="text-xs text-slate-400">{a.emp_no}</span></td>
+            <tr key={a.id}><td className="td text-xs">{fmtDate(a.adjusted_at, locale, true)}</td><td className="td">{a.employee_name}</td>
               <td className="td text-right">{fmtScore(a.computed_score)}</td><td className="td text-right">{fmtScore(a.before_score)}</td><td className="td text-right font-semibold">{fmtScore(a.after_score)}</td>
               <td className="td">{a.reason}</td><td className="td">{a.adjusted_by_name}</td>
               <td className="td">{a.status === 'active' ? <Badge color="violet">{t('results.adjActive')}</Badge> : <Badge>{t('results.adjReverted')} · {a.reverted_by_name}</Badge>}</td></tr>

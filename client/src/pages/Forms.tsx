@@ -7,7 +7,7 @@ import { useI18n, errorMessage } from '../i18n';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, PageHeader, Spinner, Tabs, cx } from '../components/ui';
-import EvaluationForm, { type Question, type Section } from '../components/EvaluationForm';
+import EvaluationForm, { GradeLegend, type Question, type Section } from '../components/EvaluationForm';
 import CsvManager from '../components/CsvManager';
 import { fmtDate, JOB_GROUPS } from '../lib/status';
 
@@ -94,7 +94,7 @@ function StageForms({ stage }: { stage: 'self' | 'leader' | 'exec' | 'upward' })
                       <Badge color={f.status === 'published' ? 'green' : f.status === 'draft' ? 'blue' : 'slate'}>{t(`formStatus.${f.status}`)}</Badge>
                     </div>
                     <div className="mt-0.5 text-xs text-slate-500">{t('forms.qCount', { n: f.question_count, p: Math.round(f.total_points * 100) / 100 })}</div>
-                    <div className="text-[11px] text-slate-400">{fmtDate(f.updated_at, locale, true)}{f.usage_count ? ` · ${t('forms.usedN', { n: f.usage_count })}` : ''}</div>
+                    <div className="text-xs text-slate-400">{fmtDate(f.updated_at, locale, true)}{f.usage_count ? ` · ${t('forms.usedN', { n: f.usage_count })}` : ''}</div>
                   </button>
                   {selected === f.id && (
                     <div className="flex flex-wrap gap-1 px-2 pb-2 pt-1">
@@ -274,6 +274,8 @@ function FormEditor({ formId, onChanged, onNewVersion }: { formId: number; onCha
         {!editable && can('forms.manage') && <Button icon={<FilePlus2 className="h-4 w-4" />} onClick={() => onNewVersion(form.id)}>{t('forms.editAsNewVersion')}</Button>}
       </div>
       {!editable && <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-3 text-sm text-slate-600"><Lock className="h-4 w-4" />{t('forms.lockedNote')}</div>}
+      {/* A~E 배점 기준: 현재 편집 중인 선택지 점수 기준으로 상단에 한 번만 표시 */}
+      <GradeLegend sections={sections.map((s, i) => ({ id: -i - 1, title: s.title, questions: s.questions.map((q) => ({ ...q, id: q.key, options: q.options.map((o) => ({ ...o, id: o.key })) })) }))} />
       {editable && (
         <div className="card p-4">
           <Field label={t('common.description')}><textarea className="input" rows={2} value={description} onChange={(e) => { setDescription(e.target.value); setDirty(true); }} /></Field>

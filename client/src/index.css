@@ -35,6 +35,42 @@ body { background: var(--color-surface); color: var(--color-ink); -webkit-font-s
   .td { @apply border-b border-slate-100 px-3 py-2.5 text-sm; }
 }
 
+/*
+ * 관리자 화면 가독성: 글자 단계를 약 1px씩 키움 (제목·표·버튼·안내 문구 모두 적용).
+ * Tailwind 글자 크기 변수를 관리자 레이아웃 안에서만 재정의 → 평가자 사이트와 A4 리포트는 기존 크기 유지
+ */
+.admin-ui {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.15rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.4rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.6rem;
+  --text-lg: 1.1875rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.9rem;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 2.1rem;
+}
+.admin-ui .th { padding: 0.75rem 1rem; font-size: 0.875rem; }
+.admin-ui .td { padding: 0.75rem 1rem; font-size: 0.9375rem; }
+/* 리포트 미리보기(A4)는 원래 크기 그대로 */
+.admin-ui .report-page {
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+}
+
 /* 리포트(A4) 렌더 영역: 시스템 폰트 우선 (PDF 캡처 시 한국어/러시아어 안정 표시) */
 .report-page {
   width: 794px; height: 1123px; padding: 40px 44px; background: #fff; color: #222; overflow: hidden;

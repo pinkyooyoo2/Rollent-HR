@@ -46,6 +46,7 @@ export const PERMISSIONS: Record<string, string> = {
   'results.finalize': '최종 확정/재오픈',
   'results.import': '평가 결과 CSV 업로드',
   'results.import.approve': '평가 결과 CSV 승인',
+  'results.delete': '평가 결과 삭제',
   'reports.generate': '리포트 생성',
   'logs.view': '활동/접근 로그 조회',
   'users.manage': '사용자 계정 관리',
