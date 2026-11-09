@@ -7,6 +7,14 @@ import { ApiError } from '../lib/api';
 import { Button, Field } from '../components/ui';
 import { LanguageSelect } from '../components/Layout';
 
+// 시연용 계정 (아이디 = 이름, 비밀번호 = 사번) — server/src/db/demoAccounts.ts 와 동일
+const DEMO_LOGINS = [
+  { name: '관리자', password: 'Admin', role: 'admin' },
+  { name: '임원', password: 'A0002', role: 'executive' },
+  { name: '팀장', password: 'A0001', role: 'leader' },
+  { name: '팀원', password: 'A000', role: 'employee' },
+] as const;
+
 export default function LoginPage() {
   const { user, login } = useAuth();
   const { t } = useI18n();
@@ -76,6 +84,29 @@ export default function LoginPage() {
             {errors.form && <div className="flex items-start gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{errors.form}</div>}
             <Button type="submit" loading={busy} className="w-full !py-2.5" icon={<LogIn className="h-4 w-4" />}>{t('login.submit')}</Button>
           </form>
+          <details open className="mt-6 border-t border-slate-200 pt-4">
+            <summary className="cursor-pointer select-none text-sm font-bold text-navy-800">{t('login.demoTitle')}</summary>
+            <p className="mt-2 text-sm text-slate-600">{t('login.demoHint')}</p>
+            <table className="mt-2 w-full overflow-hidden rounded-lg border border-slate-200 text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{t('login.demoColId')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('login.demoColPw')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('login.demoColRole')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {DEMO_LOGINS.map((d) => (
+                  <tr key={d.name} className="cursor-pointer hover:bg-slate-50"
+                    onClick={() => { setName(d.name); setPassword(d.password); setErrors({}); }}>
+                    <td className="px-3 py-2.5"><button type="button" className="font-bold text-brand-700 underline underline-offset-2">{d.name}</button></td>
+                    <td className="px-3 py-2.5 text-slate-500">{d.password}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{t(`login.demoRole.${d.role}`)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
         </div>
       </div>
     </div>
